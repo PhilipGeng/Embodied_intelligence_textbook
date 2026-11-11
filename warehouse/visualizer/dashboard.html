@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>具身强化学习实验室 · 过程可视化</title>
+  <style>/* INLINE_STYLES */</style>
+  <script>
+    // Opening the unexported template should lead to the complete textbook.
+    if (document.querySelector('style').textContent.includes('INLINE_' + 'STYLES')) {
+      location.replace(new URL('../../output/dashboard.html', location.href).href);
+    }
+  </script>
+</head>
+<body>
+<header>
+  <div><div class="eyebrow">具身强化学习实验室 / WAREHOUSE RL</div><h1>让每一步决策看得见</h1><p>从取货、送达，到价值评价与策略学习。</p></div>
+  <div class="header-meta"><span id="seed-label"></span><span>冻结模型回放 · 不更新权重</span></div>
+</header>
+<main>
+  <div class="toolbar">
+    <label>查看算法与训练记录<select id="run-select" aria-label="查看算法与训练记录"></select></label>
+    <label>动作选择<select id="mode-select"><option value="greedy">最大概率 / 最大 Q</option><option value="sampled">按 Actor 概率采样</option></select></label>
+    <div id="eval-summary" class="eval-summary"></div>
+  </div>
+  <nav role="tablist" aria-label="学习环节">
+    <button role="tab" id="tab-replay" aria-controls="panel-replay" aria-selected="true" data-tab="replay">任务回放</button>
+    <button role="tab" id="tab-bellman" aria-controls="panel-bellman" aria-selected="false" data-tab="bellman">Bellman 更新</button>
+    <button role="tab" id="tab-training" aria-controls="panel-training" aria-selected="false" data-tab="training">训练曲线</button>
+    <button role="tab" id="tab-world" aria-controls="panel-world" aria-selected="false" data-tab="world">世界模型</button>
+    <button role="tab" id="tab-textbook" aria-controls="panel-textbook" aria-selected="false" data-tab="textbook">理论 → 代码</button>
+    <button role="tab" id="tab-embodied" aria-controls="panel-embodied" aria-selected="false" data-tab="embodied">具身进阶</button>
+  </nav>
+
+  <section id="panel-replay" role="tabpanel" aria-labelledby="tab-replay">
+    <div class="playback">
+      <div class="buttons"><button id="previous">上一步</button><button id="play" class="primary">播放</button><button id="next">下一步</button></div>
+      <label class="timeline-label"><span id="step-label"></span><input id="timeline" type="range" min="0" value="0" aria-label="选择轨迹时间步"></label>
+      <label>速度<select id="speed"><option value="1100">慢速</option><option value="650" selected>正常</option><option value="260">快速</option></select></label>
+    </div>
+    <div class="two-columns">
+      <article class="panel"><div class="panel-title"><h2>机器人在哪里，动作带来了什么？</h2><span id="stage" class="badge"></span></div><div id="map" class="map" role="img" aria-label="机器人任务地图"></div><div class="legend"><span><i class="dot start"></i>S 起点</span><span><i class="dot pickup"></i>P 取货</span><span><i class="dot delivery"></i>D 送达</span><span><i class="dot hazard"></i>X 危险</span><span>● 当前位置　○ 动作前位置</span></div><p id="transition-label" class="description"></p><div id="episode-summary" class="episode-summary"></div></article>
+      <article class="panel"><h2 id="decision-title">动作与价值评价</h2><p id="decision-note" class="description"></p><div id="action-bars" class="action-bars" aria-label="四个动作的概率或 Q 值"></div><div class="rewards"><div><span>原始任务奖励</span><strong id="base-reward"></strong></div><div><span>塑形增量</span><strong id="shaping-reward"></strong></div><div><span>用于学习的奖励 r</span><strong id="training-reward"></strong></div></div><div id="value-calculation" class="calculation"></div><p class="notice">这里的 V、Q、TD 与 GAE 使用当前冻结模型重新计算，帮助解释这次行动；不是训练当时保存的梯度或损失。</p></article>
+    </div>
+    <div class="two-columns below">
+      <article class="panel"><h2>沿轨迹观察：奖励与评价信号</h2><div id="trajectory-chart" class="chart" role="img" aria-label="轨迹中的奖励及优势变化"></div><p id="advantage-note" class="description"></p></article>
+      <article class="panel"><h2>PPO 怎样使用这个分数？</h2><p class="description">下面是公式实验。调整概率比率，观察裁剪怎样抑制过大的更新收益；数值不是历史训练记录。</p><div class="ppo-controls"><label>优势 A<input type="number" id="ppo-advantage" step="0.5" value="2"></label><label>新旧概率比率 ρ：<output id="ratio-label">1.00</output><input id="ppo-ratio" type="range" min="0.2" max="1.8" step="0.01" value="1"></label></div><div id="ppo-chart" class="chart small-chart" role="img" aria-label="PPO 未裁剪和裁剪目标随概率比率的变化"></div><div id="ppo-readout" class="calculation"></div></article>
+    </div>
+    <article class="panel below"><h2>逐步记录</h2><div class="table-wrap"><table><thead><tr><th>步骤</th><th>位置 → 下一位置</th><th>指令</th><th>任务奖励</th><th>学习奖励</th><th>TD 误差</th><th>优势</th></tr></thead><tbody id="trace-table"></tbody></table></div></article>
+  </section>
+
+  <section id="panel-bellman" role="tabpanel" aria-labelledby="tab-bellman" hidden>
+    <article class="panel"><h2>从终点奖励看 Q 值怎样向前传播</h2><p id="bellman-note" class="description"></p><div class="playback"><button id="bellman-previous">前一条更新</button><button id="bellman-next" class="primary">下一条更新</button><label class="timeline-label"><span id="bellman-step"></span><input type="range" id="bellman-timeline" min="0" value="0" aria-label="选择 Bellman 更新样本"></label></div><div class="two-columns"><div><label>价值图阶段<select id="phase-select"><option value="0">取货前</option><option value="1" selected>载货后</option></select></label><div id="bellman-map" class="map" role="img" aria-label="Q 值更新后的状态价值热图"></div><p class="description">颜色深浅表示更新后的 max Q(s,a)。数字是实际执行这条教学更新后的表项，不是示意图。</p></div><div id="bellman-calculation" class="calculation large"></div></div></article>
+  </section>
+
+  <section id="panel-training" role="tabpanel" aria-labelledby="tab-training" hidden>
+    <article class="panel"><div class="panel-title"><h2>策略是否真的变好了？</h2><label>指标<select id="metric-select"><option value="success_rate">送达成功率</option><option value="base_discounted_return">原始折扣回报</option><option value="hazard_rate">危险区失败率</option><option value="mean_steps">平均步数（含失败）</option></select></label></div><div id="curve-toggles" class="curve-toggles"></div><div id="training-chart" class="chart wide-chart" role="img" aria-label="不同算法随环境交互步数变化的独立评估曲线"></div><p class="notice">横轴是实际环境交互步数；训练中每次评估 50 回合，最终报告评估 200 回合。单种子、不同预算和网络设置不能支持算法排名；一次回放成功也不等于总体成功率。</p><div class="table-wrap"><table><thead><tr><th>记录</th><th>实际设备</th><th>环境步数</th><th>送达率</th><th>危险率</th><th>原始回报</th></tr></thead><tbody id="results-table"></tbody></table></div></article>
+    <article class="panel below"><h2>MC 与 TD：评价同一套固定策略</h2><div id="prediction-chart" class="chart" role="img" aria-label="MC 和 TD 的起点价值估计误差"></div><p class="description">这两项实验不更新 Actor。比较的是起点价值估计与精确 Bellman 期望的绝对误差，不能把它们混入策略成功率的训练排名。</p></article>
+  </section>
+
+  <section id="panel-world" role="tabpanel" aria-labelledby="tab-world" hidden>
+    <article class="panel"><h2>世界模型认为动作后会发生什么？</h2><p class="description">使用当前回放的同一步状态与动作，对照模型预测和真实转移。模型输出整个下一状态分布，打滑意味着真实下一步不一定是最高概率结果。</p><div class="playback"><button id="world-previous">上一步</button><button id="world-next" class="primary">下一步</button><span id="world-step"></span></div><div class="two-columns"><div><div id="world-map" class="map" role="img" aria-label="世界模型预测下一位置的概率热图"></div><p class="description">色深表示落在该位置的总概率（载货阶段求和）；绿圈为真实下一位置，橙色虚线框为模型最可能的位置。</p></div><div id="world-readout" class="calculation large"></div></div><p class="notice">这是已训练的一步状态模型，不是 Dreamer。单步预测正确不保证长时间想象可靠；这些回放状态与模型数据可能重合，验证质量请看下面按完整轨迹划分的 held-out 指标。</p><div id="world-validation"></div></article>
+  </section>
+  <section id="panel-textbook" role="tabpanel" aria-labelledby="tab-textbook" hidden>
+    <article class="panel"><div class="panel-title"><div><h2>从公式走到可执行的算法</h2><p class="description">选择一课，沿“问题 → 推导 → 变量 → 真实代码 → 参数实验 → 实践证据 → 自测”学习。</p></div><label>课程<select id="lesson-select"></select></label></div><p id="lesson-problem" class="lesson-problem"></p><div class="two-columns"><div><h3>为什么这样设计？</h3><ol id="lesson-derivation" class="derivation"></ol><pre id="lesson-formula" class="lesson-formula"></pre><h3>公式中的量，对应哪些代码变量？</h3><p class="description">点击变量，右侧会标出真实源代码里出现的位置。</p><div class="table-wrap"><table><thead><tr><th>公式符号</th><th>代码变量</th><th>含义</th></tr></thead><tbody id="lesson-terms"></tbody></table></div></div><div><div class="panel-title"><h3>项目真实代码节选</h3><a id="lesson-source-link" target="_blank" rel="noopener"></a></div><div id="lesson-source" class="source-code" aria-label="实际 Python 源代码节选"></div><p id="lesson-code-note" class="description"></p></div></div></article>
+    <div class="two-columns below"><article class="panel"><h2>只改一个条件，再算一次</h2><p id="lesson-lab-note" class="description"></p><div id="lesson-lab-controls" class="lab-controls"></div><div id="lesson-lab-result" class="calculation"></div><div id="lesson-lab-chart" class="chart"></div></article><article class="panel"><h2>把数值实验带回真实训练</h2><pre id="lesson-command" class="lesson-command"></pre><p id="lesson-observe"></p><div id="lesson-evidence"></div><hr><h3>自测：你能解释这一步吗？</h3><p id="lesson-question"></p><div id="lesson-choices"></div><button id="lesson-check" class="primary">检查理解</button><p id="lesson-feedback" aria-live="polite"></p></article></div>
+  </section>
+  <section id="panel-embodied" role="tabpanel" aria-labelledby="tab-embodied" hidden>
+    <article class="panel"><div class="panel-title"><div><h2>连续对接：惯性、力与目标</h2><p class="description">仓库机器人的装卸子技能。下面回放实际保存的连续控制轨迹；它与离散网格的指标不可直接排名。</p></div><label>实验<select id="embodied-select"></select></label><label>评估域<select id="domain-select"><option value="nominal">名义动力学</option><option value="shifted">质量 / 阻尼 / 延迟偏移</option></select></label></div><div class="playback"><button id="embodied-previous">上一步</button><button id="embodied-play" class="primary">播放</button><button id="embodied-next">下一步</button><label class="timeline-label"><span id="embodied-step"></span><input id="embodied-timeline" type="range" min="0" value="0"></label></div><div class="two-columns"><div id="continuous-map" class="map" role="img" aria-label="连续机器人轨迹与目标"></div><div id="continuous-readout" class="calculation"></div></div><div id="continuous-learning-chart" class="chart"></div><p class="notice">名义/偏移域对比是简化动力学仿真实验，不是真机 sim-to-real 证明。BC 覆盖不足的失败记录也保留在列表中；短跑框架验证不与已训练教学策略混排。</p></article>
+    <article class="panel below"><h2>还缺哪些能力，哪些已经可以动手？</h2><div class="table-wrap"><table><thead><tr><th>方向</th><th>完成度</th><th>具体边界</th><th>实践入口</th></tr></thead><tbody id="capability-table"></tbody></table></div></article>
+    <article class="panel below"><h2>主流框架：本机状态与验证记录</h2><div id="framework-table"></div><div id="framework-experiments"></div></article>
+  </section>
+  <footer><span id="export-meta"></span><span>重新训练后，再运行 visualize.py 更新页面。更换环境随机序列可使用 --seed。</span></footer>
+</main>
+<script>/* INLINE_DATA */</script>
+<script>/* INLINE_APP */</script>
+<script>/* INLINE_TEXTBOOK */</script>
+</body>
+</html>

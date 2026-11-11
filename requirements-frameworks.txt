@@ -1,0 +1,5 @@
+# Tested optional integrations. Install separately from heavy simulator ecosystems.
+gymnasium==1.2.1
+stable-baselines3==2.7.1
+sb3-contrib==2.7.1
+mujoco==3.3.6
