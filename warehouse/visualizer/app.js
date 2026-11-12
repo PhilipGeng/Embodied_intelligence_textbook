@@ -8,7 +8,35 @@
   const percent = x => Number.isFinite(x) ? `${(100*x).toFixed(1)}%` : '—';
   const actions = ['↑ 上','→ 右','↓ 下','← 左'];
   const colors = ['#2563eb','#be5a16','#087f5b','#7c3aed','#c2413b','#067f97','#a24786','#64748b','#5b7307'];
-  const initial = data.runs.findIndex(r => r.algorithm === 'ppo');
+
+  function algorithmLabel(r) {
+    const names={bellman:'Bellman Optimality Equation · 贝尔曼最优方程',mc:'Monte Carlo · 蒙特卡洛',td:'Temporal Difference Learning · 时序差分学习',q:'Q-learning · Q 学习',sarsa:'State–Action–Reward–State–Action',dqn:'Deep Q-Network · 深度 Q 网络',reinforce:'REINFORCE · 蒙特卡洛策略梯度',ac:'Actor–Critic · 行动者–评论者',gae:'Generalized Advantage Estimation · 广义优势估计',ppo:'Proximal Policy Optimization · 近端策略优化',sac:'Soft Actor–Critic · 软行动者–评论者',td3:'Twin Delayed Deep Deterministic Policy Gradient',her:'Hindsight Experience Replay · 事后经验回放',bc:'Behavior Cloning · 行为克隆',iql:'Implicit Q-Learning · 隐式 Q 学习',mpc:'Model Predictive Control · 模型预测控制',pd:'Proportional–Derivative Control · 比例–微分控制','world-model':'World Model · 世界模型','recurrent-ppo':'Recurrent Proximal Policy Optimization','her-sac':'Hindsight Experience Replay + Soft Actor–Critic'};
+    const key=r.algorithm||r.report?.algorithm||r.id.replace(/_seed.*$/,'');
+    let label=names[key]||key;
+    const report=r.report||r;
+    if(key==='sac')label+=report.family==='continuous_docking'?'（连续动作）':report.environment?'':'（离散动作）';
+    if(report.randomized_training)label+=' · 动力学随机化';
+    if(report.sparse&&key!=='her')label+=' · 稀疏奖励';
+    if(r.id?.includes('coverage_gap'))label+=' · 目标覆盖不足';
+    return label;
+  }
+
+
+  function lessonKey(r) {
+    const k=r.algorithm||r.report?.algorithm;
+    if(k==='sac')return (r.report?.family==='continuous_docking')?(r.report.randomized_training?'randomization':'sac'):'discrete-sac';
+    return {ac:'actor','recurrent-ppo':'memory','her-sac':'her'}[k]||k;
+  }
+  function chapterLabel(r) {
+    const l=data.lessons.find(l=>l.id===lessonKey(r));
+    return (l?l.title.split(' · ')[0]+' · ':'')+algorithmLabel(r);
+  }
+  const rank=r=>data.lessons.findIndex(l=>l.id===lessonKey(r));
+  data.runs.sort((a,b)=>rank(a)-rank(b));
+  data.predictions.sort((a,b)=>rank(a)-rank(b));
+  if(data.embodied)data.embodied.runs.sort((a,b)=>rank(a)-rank(b));
+
+  const initial = 0;
   const state = {run: initial < 0 ? 0 : initial, mode:'greedy', step:0, timer:null, bellman:0, tab:'replay', ppoManual:false};
   const curveEnabled = new Set(data.runs.filter(r => r.learning.length).map(r => r.id));
   const selectedRun = () => data.runs[state.run];
@@ -153,13 +181,13 @@
   function renderTraining() {
     const metric=$('metric-select').value;
     const labels={success_rate:'送达成功率',base_discounted_return:'原始折扣回报',hazard_rate:'危险区失败率',mean_steps:'平均步数'};
-    const series=data.runs.filter(r=>curveEnabled.has(r.id)).map(r=>({name:r.id,color:colors[data.runs.indexOf(r)%colors.length],points:r.learning.map(p=>[p.steps,p[metric]])}));
+    const series=data.runs.filter(r=>curveEnabled.has(r.id)).map(r=>({name:algorithmLabel(r),color:colors[data.runs.indexOf(r)%colors.length],points:r.learning.map(p=>[p.steps,p[metric]])}));
     chart('training-chart',series,{xLabel:'环境交互步数',yLabel:labels[metric],minY:['success_rate','hazard_rate'].includes(metric)?0:null,maxY:['success_rate','hazard_rate'].includes(metric)?1:null});
     $('results-table').innerHTML=data.runs.map(r=>{
       const report=r.report,e=report.evaluation_result||{};
-      return `<tr><td>${escape(r.id)}</td><td>${escape(report.device||'CPU（既有记录）')}</td><td>${report.environment_steps??r.learning.at(-1)?.steps??'已知模型求解'}</td><td>${percent(e.success_rate)}</td><td>${percent(e.hazard_rate)}</td><td>${fmt(e.base_discounted_return)}</td></tr>`;
+      return `<tr><td>${escape(algorithmLabel(r))}</td><td>${escape(report.device||'CPU（既有记录）')}</td><td>${report.environment_steps??r.learning.at(-1)?.steps??'已知模型求解'}</td><td>${percent(e.success_rate)}</td><td>${percent(e.hazard_rate)}</td><td>${fmt(e.base_discounted_return)}</td></tr>`;
     }).join('');
-    chart('prediction-chart',data.predictions.map((r,j)=>({name:r.id,color:colors[j],points:r.learning.map(p=>[p.steps,Math.abs(p.start_estimate-p.start_exact)])})),{xLabel:'环境交互步数',yLabel:'起点价值绝对误差',minY:0});
+    chart('prediction-chart',data.predictions.map((r,j)=>({name:algorithmLabel(r),color:colors[j],points:r.learning.map(p=>[p.steps,Math.abs(p.start_estimate-p.start_exact)])})),{xLabel:'环境交互步数',yLabel:'起点价值绝对误差',minY:0});
   }
 
   function renderWorld() {
@@ -175,7 +203,7 @@
       for(let r=0;r<5;r++)for(let c=0;c<7;c++)if(data.map[r][c]==='#')invalidMass+=world.grid_probabilities[r*7+c];
       $('world-readout').innerHTML=`<p>状态 ${escape(position(f.position))}，动作 ${actions[f.action]}</p><p class="description">模型：${escape(world.model_id)}</p>`+result('真实下一状态的预测概率',percent(world.actual_next_probability))+result('预测学习奖励 / 真实学习奖励',`${fmt(world.reward)} / ${fmt(f.reward)}`)+result('预测 continuation / 真实是否继续',`${percent(world.continuation)} / ${f.terminated?'0（终止）':'1（非真正终止）'}`)+result('模型预测落到墙内的概率',percent(invalidMass))+`<p>最可能的下一状态：</p><ol class="world-list">${world.top.map(p=>`<li>${escape(position(p.position))}：${percent(p.probability)}</li>`).join('')}</ol>`;
     }
-    $('world-validation').innerHTML=data.world_models.map(m=>`<div class="description"><strong>${escape(m.id)}</strong> · held-out 下一状态 NLL ${fmt(m.report.heldout_next_state_nll)} · reward RMSE ${fmt(m.report.heldout_reward_rmse)} · continuation 准确率 ${percent(m.report.heldout_continuation_accuracy)}</div>`).join('');
+    $('world-validation').innerHTML=data.world_models.map(m=>`<div class="description"><strong>${escape(algorithmLabel({...m,algorithm:"world-model"}))}</strong> · held-out 下一状态 NLL ${fmt(m.report.heldout_next_state_nll)} · reward RMSE ${fmt(m.report.heldout_reward_rmse)} · continuation 准确率 ${percent(m.report.heldout_continuation_accuracy)}</div>`).join('');
   }
 
   function selectRun(index) {
@@ -187,6 +215,7 @@
     const e=run.report.evaluation_result||{};
     $('eval-summary').innerHTML=`<span>独立测试送达率 <strong>${percent(e.success_rate)}</strong></span><span>危险率 ${percent(e.hazard_rate)}<br>原始回报 ${fmt(e.base_discounted_return)}</span>`;
     renderReplay();renderWorld();
+    window.dispatchEvent(new CustomEvent("rl-run-changed",{detail:{run}}));
   }
 
   function showTab(name) {
@@ -195,10 +224,10 @@
     ['replay','bellman','training','world','textbook','embodied'].forEach(t=>$(`panel-${t}`).hidden=t!==name);
   }
 
-  $('run-select').innerHTML=data.runs.map((r,i)=>`<option value="${i}">${escape(r.id)}</option>`).join('');
+  $('run-select').innerHTML=data.runs.map((r,i)=>`<option value="${i}">${escape(chapterLabel(r))}</option>`).join('');
   $('seed-label').textContent=`回放环境种子 ${data.seed}`;
   $('export-meta').textContent=`${data.runs.length} 份策略记录 · 本页面离线播放 · 导出时模型推理设备 ${data.inference_device}`;
-  $('curve-toggles').innerHTML=data.runs.filter(r=>r.learning.length).map(r=>`<label><input type="checkbox" checked data-curve="${escape(r.id)}"><span style="color:${colors[data.runs.indexOf(r)%colors.length]}">${escape(r.id)}</span></label>`).join('');
+  $('curve-toggles').innerHTML=data.runs.filter(r=>r.learning.length).map(r=>`<label><input type="checkbox" checked data-curve="${escape(r.id)}"><span style="color:${colors[data.runs.indexOf(r)%colors.length]}">${escape(algorithmLabel(r))}</span></label>`).join('');
   $('run-select').addEventListener('change',e=>selectRun(e.target.value));
   $('mode-select').addEventListener('change',e=>{stop();state.mode=e.target.value;state.step=0;renderReplay();renderWorld();});
   $('previous').addEventListener('click',()=>{stop();setStep(state.step-1);});
@@ -226,6 +255,6 @@
   document.querySelectorAll('[role=tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
   window.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||!['replay','world'].includes(state.tab))return;if(e.key==='ArrowRight'){stop();setStep(state.step+1);}if(e.key==='ArrowLeft'){stop();setStep(state.step-1);}});
   // Small read-only testing API; no network or runtime backend is required.
-  window.RL_APP={getState:()=>({run:selectedRun().id,step:state.step,mode:state.mode,tab:state.tab,playing:Boolean(state.timer)}),selectRun,setStep,showTab,chart};
+  window.RL_APP={getState:()=>({run:selectedRun().id,step:state.step,mode:state.mode,tab:state.tab,playing:Boolean(state.timer)}),selectRun,setStep,showTab,chart,algorithmLabel,lessonKey,chapterLabel};
   selectRun(state.run);renderBellman();renderTraining();renderWorld();
 })();

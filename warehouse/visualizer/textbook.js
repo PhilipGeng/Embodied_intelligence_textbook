@@ -31,29 +31,36 @@
   }
 
   function showEvidence() {
-    const l=lesson(), mapping={bellman:'bellman',q:'q',dqn:'dqn',actor:'ac',gae:'gae',ppo:'ppo'};
+    const l=lesson(), mapping={bellman:'bellman',sarsa:'sarsa',q:'q',dqn:'dqn',reinforce:'reinforce',actor:'ac',gae:'gae',ppo:'ppo','discrete-sac':'sac'};
     let html='';
     if(l.id==='mc'||l.id==='td') {
       const record=data.predictions.find(r=>r.report.algorithm===l.id),e=record?.report.prediction_error;
       if(e)html=`固定策略起点：估计 ${num(e.start_estimate)}；精确期望 ${num(e.start_exact)}；绝对误差 ${num(Math.abs(e.start_estimate-e.start_exact))}。`;
     } else if(mapping[l.id]) {
       const record=data.runs.find(r=>r.algorithm===mapping[l.id]),e=record?.report.evaluation_result;
-      if(e)html=`实际记录 ${esc(record.id)}：独立评估送达率 ${pct(e.success_rate)}，原始折扣回报 ${num(e.base_discounted_return)}。`; 
+      if(e)html=`实际记录 ${esc(api.algorithmLabel(record))}：独立评估送达率 ${pct(e.success_rate)}，原始折扣回报 ${num(e.base_discounted_return)}。`; 
     } else {
       let records=embodied.runs.filter(r=>r.report.algorithm===(l.id==='randomization'?'sac':l.id));
       if(l.id==='sac')records=records.filter(r=>!r.report.sparse&&!r.report.randomized_training);
       if(l.id==='randomization')records=records.filter(r=>!r.report.sparse);
       if(records.length)html=records.map(r=>{
         const n=r.report.evaluation?.nominal,s=r.report.evaluation?.shifted;
-        return `<p><strong>${esc(r.id)}</strong><br>名义最终成功率 ${pct(n?.success_rate)}，偏移域 ${pct(s?.success_rate)}；名义最终距离 ${num(n?.final_distance)}。${r.report.dataset_hash?'<br>固定数据 hash：'+esc(r.report.dataset_hash.slice(0,16))+'…':''}${r.report.dataset_coverage?'<br>覆盖：'+esc(r.report.dataset_coverage):''}</p>`;
+        return `<p><strong>${esc(api.algorithmLabel(r))}</strong><br>名义最终成功率 ${pct(n?.success_rate)}，偏移域 ${pct(s?.success_rate)}；名义最终距离 ${num(n?.final_distance)}。${r.report.dataset_hash?'<br>固定数据 hash：'+esc(r.report.dataset_hash.slice(0,16))+'…':''}${r.report.dataset_coverage?'<br>覆盖：'+esc(r.report.dataset_coverage):''}</p>`;
       }).join('');
     }
+    if(l.id==='world-model')html=data.world_models.map(r=>`<p>独立验证：下一状态 NLL ${num(r.report.heldout_next_state_nll)}，奖励 RMSE ${num(r.report.heldout_reward_rmse)}。</p>`).join('');
     if(['memory','frameworks'].includes(l.id))html=`已有 ${(embodied.frameworks.smoke_experiments||[]).length} 个第三方短跑记录。到“具身进阶”查看框架、环境与预算；短跑只验证代码流程，不证明收敛。`;
     $('lesson-evidence').innerHTML=`<div class="lesson-evidence">${html||'当前没有这一课的对应运行结果。先执行上方命令，保存报告后重新生成页面。'}<p>这里展示真实保存的实验。单种子结果不构成算法优劣结论，简化仿真也不等于真机性能。</p></div>`;
   }
 
   function renderLesson() {
     const l=lesson();if(!l)return;
+    $('lesson-title').textContent=l.title;
+    $('lesson-select').value=lessonIndex;
+    $('lesson-previous').disabled=lessonIndex===0;
+    $('lesson-next').disabled=lessonIndex===lessons.length-1;
+    const before=lessons[lessonIndex-1],after=lessons[lessonIndex+1];
+    $('lesson-connection').textContent=(before?'承接 '+before.title+'。':'从回报的定义开始，建立价值递推。')+' 本章问题：'+l.problem+(after?' 接下来：'+after.title+'。':'接下来可按框架接入路线扩展实验。');
     $('lesson-problem').textContent=l.problem;
     $('lesson-derivation').innerHTML=l.derivation.map(x=>'<li>'+esc(x)+'</li>').join('');
     $('lesson-formula').textContent=l.formula;
@@ -70,6 +77,9 @@
     } else if(l.lab==='gae') {
       controls=slider('gamma','折扣 γ',0,.99,.01,.97)+slider('lambda','GAE λ',0,1,.01,l.id==='actor'?0:.95);
       note='使用已训练 Critic 和真实回放奖励重算；固定预测值，查看多步误差怎样组合，不更新网络。';
+    } else if(l.lab==='reinforce') {
+      controls=slider('return','完整回报 G',-10,10,.1,6)+slider('baseline','历史基线 b',-5,5,.1,2);
+      note='固定当前动作概率 π=0.25，查看完整回报相对历史基线如何改变 logπ 的梯度系数。这是单步演算，真实训练按完整回合求和。';
     } else if(l.lab==='ppo') {
       controls=slider('adv','优势 A',-5,5,.01,2)+slider('ratio','新旧概率比 ρ',.2,1.8,.01,1);
       note='单样本公式实验：优势与比率是你设定的数，不伪装成历史更新，也不构造完整的新动作分布。';
@@ -124,8 +134,11 @@
       const run=ppoRun(),frames=run.greedy.frames,g=scalar('gamma'),lam=scalar('lambda');
       const deltas=frames.map(f=>f.reward+g*f.next_value-f.value),advantages=[];
       let last=0;for(let i=frames.length-1;i>=0;i--){last=deltas[i]+g*lam*(!(frames[i].terminated||frames[i].truncated))*last;advantages[i]=last;}
-      host.innerHTML=cell('真实回放来源',run.id)+formula(`δ_0 = r_0 + γV_1 − V_0 = ${num(deltas[0])}\nA_0 = δ_0 + γλA_1 = ${num(advantages[0])}`);
+      host.innerHTML=cell('真实回放来源',api.algorithmLabel(run))+formula(`δ_0 = r_0 + γV_1 − V_0 = ${num(deltas[0])}\nA_0 = δ_0 + γλA_1 = ${num(advantages[0])}`);
       api.chart('lesson-lab-chart',[{name:'一步 δ',points:deltas.map((v,i)=>[i,v])},{name:'多步 A',points:advantages.map((v,i)=>[i,v])}],{xLabel:'轨迹时间步',yLabel:'评价信号'});
+    } else if(l.lab==='reinforce') {
+      const advantage=(scalar('return')-scalar('baseline'))/10;
+      host.innerHTML=formula(`A_scaled = (G−b)/10 = ${num(advantage)}\nL_t = −log(0.25) × A_scaled = ${num(-Math.log(.25)*advantage)}\n∂L_t/∂logπ = −A_scaled = ${num(-advantage)}`)+cell('更新方向',advantage>0?'增大此动作概率':advantage<0?'减小此动作概率':'本样本不推动策略');
     } else if(l.lab==='ppo') {
       const a=scalar('adv'),rho=scalar('ratio'),clip=Math.max(.8,Math.min(1.2,rho)),objective=Math.min(rho*a,clip*a);
       host.innerHTML=formula(`ρA = ${num(rho*a)}\nclip(ρ)A = ${num(clip*a)}\nPPO 目标 = min(两者) = ${num(objective)}\n对应最小化的损失 = ${num(-objective)}`);
@@ -168,7 +181,7 @@
         cost+=3*((s[0]-f.goal[0])**2+(s[1]-f.goal[1])**2);candidates.push({action:[ux,uy],cost,trajectory});
       }
       candidates.sort((a,b)=>a.cost-b.cost);
-      host.innerHTML=cell('简化规划选择的恒定力',vector(candidates[0].action))+cell('预测总成本',num(candidates[0].cost))+`<p class="description">模型来自 ${esc(record.id)}，留出状态 RMSE ${num(record.report.model_validation.heldout_state_rmse)}。这是模型预测图，尚未执行到环境。</p>`;
+      host.innerHTML=cell('简化规划选择的恒定力',vector(candidates[0].action))+cell('预测总成本',num(candidates[0].cost))+`<p class="description">模型来自 ${esc(api.algorithmLabel(record))}，留出状态 RMSE ${num(record.report.model_validation.heldout_state_rmse)}。这是模型预测图，尚未执行到环境。</p>`;
       drawContinuous('lesson-lab-chart',candidates[0].trajectory,h-1);
     } else if(l.lab==='dynamics') {
       const mass=scalar('mass'),drag=scalar('drag'),delay=scalar('delay'),goal=[.7,.7],queue=Array.from({length:delay},()=>[0,0]);
@@ -183,7 +196,7 @@
       host.innerHTML=formula(`v′ = clip[v + .12(u/${num(mass)} − ${num(drag)}v)]\np′ = clip[p + .12v′]\n延迟队列：${delay} 步`)+cell('固定 PD 控制器的最终距离',num(Math.hypot(p[0]-.7,p[1]-.7)));
       drawContinuous('lesson-lab-chart',frames,59);
     } else if(l.lab==='prediction') {
-      const records=data.predictions.map(r=>({name:r.id,points:r.learning.map(x=>[x.steps,Math.abs(x.start_estimate-x.start_exact)])}));
+      const records=data.predictions.map(r=>({name:api.algorithmLabel(r),points:r.learning.map(x=>[x.steps,Math.abs(x.start_estimate-x.start_exact)])}));
       host.innerHTML='<p>这些点来自已经执行并保存的 MC/TD 实验，不是根据示意公式编造的曲线。</p>';
       api.chart('lesson-lab-chart',records,{xLabel:'环境交互步数',yLabel:'起点估值绝对误差',minY:0});
     } else host.innerHTML='<p>请使用实际训练命令，或到“具身进阶”检查第三方依赖和短跑结果。未安装的框架会明确显示未安装。</p>';
@@ -208,23 +221,36 @@
     $('capability-table').innerHTML=embodied.capabilities.map(c=>`<tr><td>${esc(c.title)}</td><td><span class="capability-status">${esc(c.status)}</span></td><td class="wrap">${esc(c.detail)}</td><td>${esc(c.command)}</td></tr>`).join('');
     const frameworks=embodied.frameworks.frameworks||[];
     $('framework-table').innerHTML=frameworks.length?`<div class="table-wrap"><table><thead><tr><th>框架</th><th>本机检测</th><th>版本</th><th>职责</th></tr></thead><tbody>${frameworks.map(f=>`<tr><td><a href="${esc(f.official)}" target="_blank" rel="noopener">${esc(f.name)}</a></td><td>${esc(f.status)}</td><td>${esc(f.version||'—')}</td><td>${esc(f.purpose)}</td></tr>`).join('')}</tbody></table></div>`:'<p>运行 framework_doctor.py 后重新导出，可读取本机真实依赖状态。</p>';
-    $('framework-experiments').innerHTML=(embodied.frameworks.smoke_experiments||[]).map(r=>`<div class="framework-card"><strong>${esc(r.id)}</strong> · ${esc(r.environment)} · ${r.actual_steps} 步 · ${esc(r.device)} · 平均回报 ${num(r.mean_return)}。这条记录仅验证真实训练流程，预算不足以证明收敛。</div>`).join('');
+    $('framework-experiments').innerHTML=(embodied.frameworks.smoke_experiments||[]).map(r=>`<div class="framework-card"><strong>${esc(api.algorithmLabel(r))}</strong> · ${esc(r.environment)} · ${r.actual_steps} 步 · ${esc(r.device)} · 平均回报 ${num(r.mean_return)}。这条记录仅验证真实训练流程，预算不足以证明收敛。</div>`).join('');
   }
 
   $('lesson-select').innerHTML=lessons.map((l,i)=>`<option value="${i}">${esc(l.title)}</option>`).join('');
-  $('lesson-select').addEventListener('change',e=>{lessonIndex=Number(e.target.value);renderLesson();});
+  function selectLesson(id,sync=true) {
+    const i=lessons.findIndex(l=>l.id===id);if(i<0)return;
+    lessonIndex=i;renderLesson();
+    if(sync){
+      const runIndex=data.runs.findIndex(r=>api.lessonKey(r)===id);
+      if(runIndex>=0&&api.getState().run!==data.runs[runIndex].id)api.selectRun(runIndex);
+      const native=embodied.runs.findIndex(r=>api.lessonKey(r)===id);
+      if(native>=0){stopNative();nativeIndex=native;nativeStep=0;$('embodied-select').value=native;renderNative();}
+    }
+  }
+  $('lesson-select').addEventListener('change',e=>selectLesson(lessons[Number(e.target.value)].id));
+  $('lesson-previous').addEventListener('click',()=>{if(lessonIndex>0)selectLesson(lessons[lessonIndex-1].id);});
+  $('lesson-next').addEventListener('click',()=>{if(lessonIndex<lessons.length-1)selectLesson(lessons[lessonIndex+1].id);});
+  window.addEventListener('rl-run-changed',e=>selectLesson(api.lessonKey(e.detail.run),false));
   $('lesson-terms').addEventListener('click',e=>{const b=e.target.closest('[data-variable]');if(b)showSource(b.dataset.variable);});
   $('lesson-lab-controls').addEventListener('input',updateLab);
   $('lesson-check').addEventListener('click',()=>{const selected=document.querySelector('input[name=lesson-answer]:checked');if(!selected){$('lesson-feedback').textContent='先选择一个答案。';return;}const correct=Number(selected.value)===lesson().quiz.answer;$('lesson-feedback').className=correct?'good':'bad';$('lesson-feedback').textContent=(correct?'理解正确。':'再想一下。')+lesson().quiz.explanation;});
   $('run-select').addEventListener('change',()=>{if(lesson())updateLab();});
-  $('embodied-select').innerHTML=embodied.runs.map((r,i)=>`<option value="${i}">${esc(r.id)}</option>`).join('');
-  $('embodied-select').addEventListener('change',e=>{stopNative();nativeIndex=Number(e.target.value);nativeStep=0;renderNative();});
+  $('embodied-select').innerHTML=embodied.runs.map((r,i)=>`<option value="${i}">${esc(api.chapterLabel(r))}</option>`).join('');
+  $('embodied-select').addEventListener('change',e=>{stopNative();nativeIndex=Number(e.target.value);nativeStep=0;renderNative();selectLesson(api.lessonKey(nativeRun()),false);});
   $('domain-select').addEventListener('change',()=>{stopNative();nativeStep=0;renderNative();});
   $('embodied-timeline').addEventListener('input',e=>{stopNative();nativeStep=Number(e.target.value);renderNative();});
   $('embodied-previous').addEventListener('click',()=>{stopNative();nativeStep--;renderNative();});
   $('embodied-next').addEventListener('click',()=>{stopNative();nativeStep++;renderNative();});
   $('embodied-play').addEventListener('click',()=>{if(nativeTimer){stopNative();return;}if(nativeStep>=route().length-1)nativeStep=0;$('embodied-play').textContent='暂停';nativeTimer=setInterval(()=>{if(nativeStep>=route().length-1){stopNative();return;}nativeStep++;renderNative();},350);});
   document.querySelectorAll('[role=tab]').forEach(b=>b.addEventListener('click',stopNative));
-  window.TEXTBOOK_APP={getLesson:()=>lesson()?.id,selectLesson:id=>{const i=lessons.findIndex(l=>l.id===id);if(i>=0){lessonIndex=i;$('lesson-select').value=i;renderLesson();}},getNative:()=>({id:nativeRun()?.id,step:nativeStep,domain:$('domain-select').value})};
-  renderLesson();renderNative();renderCatalog();
+  window.TEXTBOOK_APP={getLesson:()=>lesson()?.id,selectLesson,getNative:()=>({id:nativeRun()?.id,step:nativeStep,domain:$('domain-select').value})};
+  selectLesson(api.lessonKey(data.runs.find(r=>r.id===api.getState().run)),false);renderNative();renderCatalog();
 })();

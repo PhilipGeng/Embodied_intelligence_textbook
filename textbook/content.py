@@ -150,6 +150,122 @@ LESSONS = [
 ]
 
 
+# Separate lessons for every runnable method.
+LESSONS.extend([{'id': 'sarsa',
+  'title': 'SARSA：评价实际探索行为',
+  'problem': '探索中的下一动作可能冒险，目标是否也应考虑它？',
+  'derivation': ['SARSA 先按带 ε 探索的行为策略采样下一动作 a′。',
+                 '用 Q(s′,a′) 替代未知的后续回报，再形成一步目标。',
+                 '只更新当前执行动作的 Q；重复采样让价值跟随实际行为策略。'],
+  'formula': 'y=r+γ(1-d)Q(s′,a′), a′∼π_behavior\nδ=y−Q(s,a)\nQ(s,a)←Q(s,a)+ηδ',
+  'terms': [{'symbol': 'a′', 'variable': 'next_action', 'meaning': '实际采样的下一行为动作'},
+            {'symbol': 'Q(s′,a′)', 'variable': 'next_value', 'meaning': '包含探索影响的后续估计'},
+            {'symbol': 'y', 'variable': 'target', 'meaning': '本步目标'}],
+  'reference': ('warehouse/tabular.py', 'next_action = choose'),
+  'command': 'python run.py sarsa --episodes 3000',
+  'observe': '与 Q-learning 固定地图、奖励和种子对照，区别在自举目标。',
+  'quiz': {'question': 'SARSA 的下一动作应来自哪里？',
+           'choices': ['行为策略采样', '一定取最大 Q'],
+           'answer': 0,
+           'explanation': 'SARSA 学习实际行为策略的价值。'},
+  'lab': 'bellman'},
+ {'id': 'reinforce',
+  'title': 'REINFORCE：完整回报直接训练策略',
+  'problem': '怎样在没有 Critic 时增加带来好回报的动作概率？',
+  'derivation': ['轨迹概率由每一步策略概率与环境转移概率相乘。',
+                 '环境不依赖策略参数，用 ∇p=p∇log p 得到对数概率梯度。',
+                 '用完整后续回报 G_t 评价动作；减去独立于当前动作的基线降低方差。',
+                 '本实现保留 γ^t 权重，按轨迹求和，再对回合取平均。'],
+  'formula': '∇J=E[Σ_t γ^t ∇logπ(a_t|s_t)(G_t−b)]\nL=−mean_episodes[Σ_t γ^t logπ(a_t|s_t)(G_t−b)/10]',
+  'terms': [{'symbol': 'G_t', 'variable': 'returns', 'meaning': '倒序计算的完整回报'},
+            {'symbol': 'b', 'variable': 'baseline', 'meaning': '前一批回合的标量基线，无神经 Critic'},
+            {'symbol': 'γ^t', 'variable': 'discount', 'meaning': '起始状态折扣目标的时间权重'},
+            {'symbol': 'L', 'variable': 'loss', 'meaning': '负号将梯度上升转为下降'}],
+  'reference': ('warehouse/neural.py', 'loss = loss - (logp * advantages * discount)'),
+  'command': 'python run.py reinforce --episodes 2000',
+  'observe': '完整轨迹评估有较大波动。下一章用学习到的 Critic 提供更及时的评价。',
+  'quiz': {'question': 'REINFORCE 在本实现里需要价值网络吗？',
+           'choices': ['需要', '不需要'],
+           'answer': 1,
+           'explanation': '本实现用完整回报和历史标量基线，不训练价值网络。'},
+  'lab': 'reinforce'},
+ {'id': 'discrete-sac',
+  'title': '离散 SAC：把动作期望精确求和',
+  'problem': '怎样同时优化任务价值和策略熵，并复用经验？',
+  'derivation': ['把 αH(π) 加入回报，鼓励保留动作分布的探索。',
+                 '四个动作可枚举，soft value 直接按概率加权求和。',
+                 '双目标 Q 取较小值，Critic 拟合 soft Bellman 目标。',
+                 'Actor 最小化 Σπ(αlogπ−min Q)；无需对离散采样动作求导。'],
+  'formula': 'V_soft(s′)=Σ_a π(a|s′)[min Q_target(s′,a)−αlogπ(a|s′)]\n'
+             'y=r+γ(1-d)V_soft(s′)\n'
+             'L_actor=E_s Σ_a π(a|s)[αlogπ(a|s)−min Q(s,a)]',
+  'terms': [{'symbol': 'π', 'variable': 'next_p', 'meaning': '四个动作的归一化概率'},
+            {'symbol': 'logπ', 'variable': 'next_logp', 'meaning': '离散对数概率'},
+            {'symbol': 'V_soft', 'variable': 'next_value', 'meaning': '对所有动作精确求和'},
+            {'symbol': 'y', 'variable': 'y', 'meaning': '固定的自举目标'}],
+  'reference': ('warehouse/neural.py', 'next_value = (next_p'),
+  'command': 'python run.py sac --steps 65536',
+  'observe': '本章对四个离散动作精确求和；下一章连续 SAC 使用重参数化采样与 tanh 密度修正。',
+  'quiz': {'question': '离散 SAC 的动作期望必须 Monte Carlo 采样吗？',
+           'choices': ['必须', '动作少时可以精确求和'],
+           'answer': 1,
+           'explanation': '本任务只有四个动作，直接求和。'},
+  'lab': 'sac'},
+ {'id': 'world-model',
+  'title': '世界模型：学习动作的后果',
+  'problem': 'Critic 给出价值，但不能直接告诉我们下一状态是什么。',
+  'derivation': ['用转移样本训练 pφ(s′|s,a)、奖励预测和 continuation。',
+                 '下一状态分类用交叉熵，奖励用平方误差，continuation 用二元交叉熵。',
+                 '按回合保留验证数据，检查没见过转移上的误差。',
+                 '下一步用预测模型展开未来，再按成本选择动作，即 MPC 的桥梁。'],
+  'formula': 'L_model=CE(pφ(s′|s,a),s′)+0.1 MSE(r̂,r)+BCE(ĉ,1−terminated)',
+  'terms': [{'symbol': 'pφ', 'variable': 'logits', 'meaning': '下一状态分类 logits'},
+            {'symbol': 'r̂', 'variable': 'predicted_reward', 'meaning': '奖励回归'},
+            {'symbol': 'ĉ', 'variable': 'predicted_cont', 'meaning': '继续标志的 logits'},
+            {'symbol': 'L', 'variable': 'loss', 'meaning': '三个预测损失相加'}],
+  'reference': ('warehouse/world_model.py', 'loss = (nn.functional.cross_entropy'),
+  'command': 'python run.py world-model --episodes 300 --steps 2000',
+  'observe': '查看“世界模型”页的预测分布和 held-out 指标。模型准确率不能直接代表控制成功；完整 Dreamer 尚未实现。',
+  'quiz': {'question': '世界模型的输出与 Critic 的输出相同吗？',
+           'choices': ['相同，都是 V', '不同，世界模型预测转移后果'],
+           'answer': 1,
+           'explanation': '价值预测与环境预测可结合，但学习目标不同。'},
+  'lab': 'frameworks'},
+ {'id': 'pd',
+  'title': 'PD 控制参考：先理解力与惯性',
+  'problem': '到目标附近仍有速度时，为什么不能只朝目标加速？',
+  'derivation': ['位置误差提供朝目标的驱动力。', '速度负反馈提供刹车，减小惯性导致的越过目标。', '把合力裁剪到允许范围，再交给环境积分。'],
+  'formula': 'u=clip(k_p(g−p)−k_d v,−1,1)',
+  'terms': [{'symbol': 'g−p', 'variable': 'observation', 'meaning': '观测中的目标与当前位置差'},
+            {'symbol': 'v', 'variable': 'observation', 'meaning': '观测中的当前速度'},
+            {'symbol': 'u', 'variable': 'pd_action', 'meaning': '手工设定控制律的输出'}],
+  'reference': ('embodied/env.py', 'def pd_action'),
+  'command': 'python run_embodied.py pd',
+  'observe': 'PD 不训练权重。作为动力学与模型规划的控制参考，参数来自人工设计。',
+  'quiz': {'question': '这个 PD 控制器需要学习 Critic 吗？',
+           'choices': ['需要', '不需要'],
+           'answer': 1,
+           'explanation': '它使用显式反馈控制律，不是强化学习策略。'},
+  'lab': 'dynamics'}])
+
+LESSON_ORDER = ['bellman', 'mc', 'td', 'sarsa', 'q', 'dqn', 'reinforce', 'actor', 'gae', 'ppo', 'discrete-sac', 'sac', 'td3', 'her', 'bc', 'iql', 'world-model', 'pd', 'mpc', 'randomization', 'memory', 'frameworks']
+LESSONS.sort(key=lambda lesson: LESSON_ORDER.index(lesson["id"]))
+
+_NUMERALS = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九","二十","二十一","二十二"]
+for _index, _lesson in enumerate(LESSONS):
+    _lesson["chapter"] = _index + 1
+    _lesson["title"] = "第" + _NUMERALS[_index] + "章 · " + _lesson["title"].split(" · ")[-1]
+    if _lesson["id"] == "q":
+        _lesson["title"] = "第五章 · Q-learning：学习贪心目标策略"
+        _lesson["command"] = "python run.py q --episodes 3000"
+        _lesson["problem"] = "上一章评价实际探索行为；能否边探索，边学习贪心策略的价值？"
+        _lesson["derivation"] = ["沿用 SARSA 的状态、动作和奖励样本。", "自举时改用下一状态的最大 Q，而非实际采样动作的 Q。", "目标策略是贪心策略，行为策略仍可探索，因此属于 off-policy。"]
+        _lesson["formula"] = "y=r+γ(1-d)max_a′ Q(s′,a′)\nQ(s,a)←Q(s,a)+η[y−Q(s,a)]"
+    if _lesson["id"] == "actor":
+        _lesson["title"] = "第八章 · Actor–Critic：用价值网络辅助策略"
+        _lesson["command"] = "python run.py ac --steps 65536"
+
+
 def build_lessons(project):
     result = []
     for authored in LESSONS:

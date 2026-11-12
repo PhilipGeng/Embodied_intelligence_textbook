@@ -175,7 +175,7 @@ actor_loss = mean_s Σ_a π(a|s) [α log π(a|s) - min(Q1,Q2)(s,a)]
 
 ## 交互式教科书：理论与实践一起学
 
-打开 `output/dashboard.html`，选择「理论 → 代码」。17 课按 Bellman、MC、TD、SARSA/Q、DQN、Actor-Critic、GAE、PPO、连续 SAC、TD3、HER、BC、IQL、MPC、动力学随机化、记忆策略、框架衔接组织。
+打开 `output/dashboard.html`，选择「理论 → 代码」。22 章按 Bellman、MC、TD、SARSA/Q、DQN、Actor-Critic、GAE、PPO、连续 SAC、TD3、HER、BC、IQL、MPC、动力学随机化、记忆策略、框架衔接组织。
 
 每课包含：实际问题、推导步骤、公式符号与代码变量对照、从当前源文件提取的代码及行号、可调数值实验、可复现命令、观察建议和自测。浏览器数值演算不等于重新训练；已保存策略的回放、教学演算和框架短跑分别注明。
 
