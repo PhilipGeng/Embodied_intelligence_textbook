@@ -113,6 +113,8 @@ P......
 |7 学习环境并规划|一步世界模型、模型学习 + MPC|预测模型怎样帮助选择动作？误差如何影响规划？|`warehouse/world_model.py`、`embodied/planning.py`|
 |8 走向具身框架|动力学随机化、POMDP、循环策略、Gymnasium/SB3/MuJoCo|环境变化、记忆与仿真接口分别解决什么问题？|`embodied/frameworks.py`、`run_framework.py`|
 
+每章详细理论包含：前置基础、原有瓶颈、核心改动、新增能力、设计假设、公式逐项解释、推导步骤、数值例子、算法流程与剩余局限。当前包含 44 组公式、363 项局部符号解释，另有通用符号约定。
+
 每学一章，建议完成四步：**先预测结果 → 手动算一次 → 运行代码 → 只改一个条件做对照**。例如，先判断增大 gamma 会怎样影响早期状态价值，再操作页面滑块，最后修改实验配置检查实际训练表现。
 
 ## 实战命令
@@ -213,6 +215,7 @@ python run_framework.py sac --env Reacher-v5 --steps 512
 打开交互教材.html          双击进入完整离线教材
 visualize.py               将模型、数据与课程导出为 HTML
 textbook/content.py        课程内容、公式与真实源码映射
+textbook/theory.py         22 章详细理论、44 组公式与逐项解释
 warehouse/
   env.py                   离散仓库任务
   tabular.py               Bellman、MC/TD、SARSA、Q-learning

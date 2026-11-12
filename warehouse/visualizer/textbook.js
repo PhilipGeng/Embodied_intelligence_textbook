@@ -53,6 +53,27 @@
     $('lesson-evidence').innerHTML=`<div class="lesson-evidence">${html||'当前没有这一课的对应运行结果。先执行上方命令，保存报告后重新生成页面。'}<p>这里展示真实保存的实验。单种子结果不构成算法优劣结论，简化仿真也不等于真机性能。</p></div>`;
   }
 
+
+  function renderTheory(l) {
+    const t=l.theory;
+    if(!t){$('lesson-theory').textContent='本章详细理论未载入，请重新导出教材。';return;}
+    const paragraphs=items=>items.map(x=>`<p>${esc(x)}</p>`).join('');
+    $('lesson-theory').innerHTML=`
+      <div class="theory-intro"><h3>本章依赖什么基础？</h3><p>${esc(t.prerequisite)}</p></div>
+      <h3>相比之前，为什么需要这项技术？</h3>
+      <div class="theory-evolution">
+        ${[['原有方法的瓶颈',t.weakness],['核心改动',t.change],['获得的新能力',t.capability]].map(([label,value])=>`<div><h4>${esc(label)}</h4><p>${esc(value)}</p></div>`).join('')}
+      </div>
+      <h3>设计动机与关键假设</h3>${paragraphs(t.design)}
+      <details class="theory-notation"><summary>展开共同符号约定：状态、奖励、终止、期望与梯度</summary><dl>${l.notation.map(([symbol,meaning])=>`<dt>${esc(symbol)}</dt><dd>${esc(meaning)}</dd>`).join('')}</dl></details>
+      <h3>逐个公式推导，逐项解释</h3>
+      <div class="theory-equations">${t.equations.map((e,i)=>`<article class="theory-equation"><h4>公式 ${l.chapter}.${i+1} · ${esc(e.title)}</h4><pre class="lesson-formula">${esc(e.formula)}</pre><h5>公式里的每一项</h5><dl class="theory-symbols">${e.symbols.map(term=>`<dt>${esc(term.symbol)}</dt><dd>${esc(term.meaning)}</dd>`).join('')}</dl><h5>这一步是怎样得到的？</h5><ol>${e.steps.map(step=>`<li>${esc(step)}</li>`).join('')}</ol><p class="theory-purpose"><strong>为什么这样写：</strong>${esc(e.why)}</p></article>`).join('')}</div>
+      <h3>代入数字，检查是否真的理解</h3><p class="theory-example">${esc(t.example)}</p>
+      <h3>公式怎样组成实际算法？</h3><ol class="theory-workflow">${t.workflow.map(step=>`<li>${esc(step)}</li>`).join('')}</ol>
+      <h3>仍未解决什么？</h3><p class="theory-limitation">${esc(t.limitation)}</p>
+      <p class="description">下面将本章公式映射到项目源码；继续操作参数实验，再运行实际训练命令核对。</p><hr>`;
+  }
+
   function renderLesson() {
     const l=lesson();if(!l)return;
     $('lesson-title').textContent=l.title;
@@ -62,6 +83,7 @@
     const before=lessons[lessonIndex-1],after=lessons[lessonIndex+1];
     $('lesson-connection').textContent=(before?'承接 '+before.title+'。':'从回报的定义开始，建立价值递推。')+' 本章问题：'+l.problem+(after?' 接下来：'+after.title+'。':'接下来可按框架接入路线扩展实验。');
     $('lesson-problem').textContent=l.problem;
+    renderTheory(l);
     $('lesson-derivation').innerHTML=l.derivation.map(x=>'<li>'+esc(x)+'</li>').join('');
     $('lesson-formula').textContent=l.formula;
     $('lesson-terms').innerHTML=l.terms.map(t=>`<tr><td>${esc(t.symbol)}</td><td><button class="term-key" data-variable="${esc(t.variable)}">${esc(t.variable)}</button></td><td>${esc(t.meaning)}</td></tr>`).join('');

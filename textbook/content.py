@@ -1,5 +1,6 @@
 """Authored lessons; code excerpts are read from the installed project at export."""
 from pathlib import Path
+from .theory import THEORY, COMMON
 
 
 def item(key, title, problem, derivation, formula, terms, reference, command,
@@ -78,7 +79,7 @@ LESSONS = [
  item("sac", "09 · 连续 SAC：价值与探索一起优化",
       "确定性策略可能过早集中；连续动作怎样通过 Critic 获得梯度？",
       ["将熵加入回报目标，得到 soft Bellman 目标。", "Gaussian 采样用重参数化，tanh 将动作限制在 [-1,1]。", "logπ 必须加入 tanh 雅可比修正；Actor 同时优化 Q 与熵。"],
-      "y=r+γ[min Q_target(s′,a′)-α logπ(a′|s′)]\nLπ=mean[α logπ(a|s)-min Q(s,a)]",
+      "y=r+γ(1-d)[min Q_target(s′,a′)-α logπ(a′|s′)]\nLπ=mean[α logπ(a|s)-min Q(s,a)]",
       [("α", "log_alpha", "熵温度 exp(log_alpha)"),("Q", "critic", "双动作价值网络"),("logπ", "logp", "连续密度，含 tanh 修正"),("重参数化", "rsample", "让梯度经过动作")],
       ("embodied/learners.py", "future = torch.minimum(nq1, nq2) -"), "python run_embodied.py sac --steps 20000 --device cuda",
       "与原仓库离散 SAC 区分：离散版精确求和，连续版重参数化采样。温度是奖励尺度相关的参数。",
@@ -86,7 +87,7 @@ LESSONS = [
  item("td3", "10 · TD3：别让 Actor 追逐错误高分",
       "Actor 总在寻找 Critic 高分，可能利用错误峰值并将错误写回 Bellman 目标。",
       ["两个目标 Critic 取较小值，减少单个错误高分传播。", "给目标动作加小幅噪声，平滑局部尖峰。", "Critic 多更新几次再更新 Actor，使评价先稳定。"],
-      "a′=clip(μ_target(s′)+noise)\ny=r+γ min(Q1_target,Q2_target)(s′,a′)\nLμ=-mean Q1(s,μ(s))",
+      "a′=clip(μ_target(s′)+noise)\ny=r+γ(1-d) min(Q1_target,Q2_target)(s′,a′)\nLμ=-mean Q1(s,μ(s))",
       [("双 Q", "target_critic", "抑制错误乐观值"),("平滑", "noise", "检查动作邻域"),("延迟", "updates % 2", "每两次 Critic 更新一次 Actor")],
       ("embodied/learners.py", "if not is_td3 or updates % 2 == 0"), "python run_embodied.py td3 --steps 20000 --device cuda",
       "min 不是真值保证，也可能偏保守。对照连续 SAC 时任务保持相同。",
@@ -110,7 +111,7 @@ LESSONS = [
  item("iql", "13 · IQL：固定数据里的价值改进",
       "只用固定数据时，不能验证未见动作的错误高 Q。",
       ["用偏向较高 Q 的 expectile 学 V。", "以 r+γV(s′) 学 Q，不用 Actor 的未见动作构造目标。", "对数据动作做 exp(βA) 加权模仿，强调较好的动作。"],
-      "u=Q_data−V; L_V=|τ−1(u<0)|u²\ny=r+γV(s′)\nLπ=−mean[exp(β(Q−V)) logπ(a_data|s)]",
+      "u=Q_data−V; L_V=|τ−1(u<0)|u²\ny=r+γ(1-d)V(s′)\nLπ=−mean[exp(β(Q−V)) logπ(a_data|s)]",
       [("τ", "weights", "这里为 .7/.3 的不对称误差权重"),("A", "advantage", "数据动作相对 V 的价值"),("w", "behavior_weights", "上限 100 的模仿权重")],
       ("embodied/offline.py", "residual = q - value(s)"), "python run_embodied.py iql --dataset output/embodied/bc_seed7_cuda/dataset.npz",
       "训练不新增交互，但演示数据的采集有成本。IQL 仍不能可靠发明和验证数据完全没覆盖的动作后果。",
@@ -270,6 +271,8 @@ def build_lessons(project):
     result = []
     for authored in LESSONS:
         lesson = dict(authored)
+        lesson["theory"] = THEORY[lesson["id"]]
+        lesson["notation"] = COMMON
         filename, needle = lesson.pop("reference")
         path = Path(project) / filename
         if path.exists():
